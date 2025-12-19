@@ -372,3 +372,66 @@ def rename_history_file(
     except Exception as e:
         logger.error(f"Failed to rename history file: {e}")
     return False
+
+
+# Memory facts helpers
+FACTS_PATH = os.path.join("data", "memory_facts.json")
+_FACTS_TEMPLATE = {"user_profile": {}, "stream_profile": {}, "custom_facts": []}
+_FACTS_MAX_CUSTOM = 20
+_FACTS_FILENAME = "memory_facts.json"
+
+
+def _ensure_facts_file() -> dict:
+    """Ensure the facts file exists and return its content."""
+    os.makedirs(os.path.dirname(FACTS_PATH), exist_ok=True)
+    if not os.path.exists(FACTS_PATH):
+        with open(FACTS_PATH, "w", encoding="utf-8") as f:
+            json.dump(_FACTS_TEMPLATE, f, ensure_ascii=False, indent=2)
+        return _FACTS_TEMPLATE.copy()
+    try:
+        with open(FACTS_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            if not isinstance(data, dict):
+                raise ValueError("Facts file is not a dict")
+            return data
+    except Exception as e:
+        logger.error(f"Failed to read memory_facts.json: {e}")
+        return _FACTS_TEMPLATE.copy()
+
+
+def load_memory_facts() -> dict:
+    """Load memory facts from disk."""
+    return _ensure_facts_file()
+
+
+def save_memory_facts(facts: dict) -> None:
+    """Persist memory facts to disk."""
+    os.makedirs(os.path.dirname(FACTS_PATH), exist_ok=True)
+    with open(FACTS_PATH, "w", encoding="utf-8") as f:
+        json.dump(facts, f, ensure_ascii=False, indent=2)
+
+
+def add_custom_fact(fact_text: str) -> dict:
+    """Add a custom fact with max length constraint; returns updated facts."""
+    facts = _ensure_facts_file()
+    custom_facts = facts.get("custom_facts") or []
+    if not isinstance(custom_facts, list):
+        custom_facts = []
+    # append new fact and trim
+    custom_facts.append(fact_text)
+    if len(custom_facts) > _FACTS_MAX_CUSTOM:
+        custom_facts = custom_facts[-_FACTS_MAX_CUSTOM :]
+    facts["custom_facts"] = custom_facts
+    save_memory_facts(facts)
+    return facts
+
+
+def clear_memory_facts() -> dict:
+    """Reset memory facts to template."""
+    facts = _FACTS_TEMPLATE.copy()
+    save_memory_facts(facts)
+    return facts
+
+
+def get_memory_facts_filename() -> str:
+    return _FACTS_FILENAME

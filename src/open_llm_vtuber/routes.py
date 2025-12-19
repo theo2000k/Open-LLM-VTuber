@@ -10,6 +10,17 @@ from loguru import logger
 from .service_context import ServiceContext
 from .websocket_handler import WebSocketHandler
 from .proxy_handler import ProxyHandler
+from .chat_history_manager import (
+    load_memory_facts,
+    clear_memory_facts,
+    get_memory_facts_filename,
+)
+from .utils.persona_override import (
+    load_override,
+    save_override,
+    delete_override,
+    DEFAULT_OVERRIDE_DIR,
+)
 
 
 def init_client_ws_route(default_context_cache: ServiceContext) -> APIRouter:
@@ -92,6 +103,83 @@ def init_webtool_routes(default_context_cache: ServiceContext) -> APIRouter:
     async def web_tool_redirect_alt():
         """Redirect /web_tool to /web_tool/index.html"""
         return Response(status_code=302, headers={"Location": "/web-tool/index.html"})
+
+    @router.get("/persona-info")
+    async def persona_info():
+        """Expose active persona metadata and system prompt (read-only)."""
+        ctx = default_context_cache
+        info = getattr(ctx, "persona_info", {}) or {}
+        facts = getattr(ctx, "memory_facts", {}) or {}
+        return JSONResponse(
+            {
+                "active_persona_id": info.get("id"),
+                "persona_name": info.get("name"),
+                "persona_role": info.get("role"),
+                "source": info.get("source", "conf.yaml:character_config.persona_prompt"),
+                "system_prompt": ctx.system_prompt or info.get("system_prompt"),
+                "memory_facts": facts,
+            }
+        )
+
+    @router.get("/memory-facts")
+    async def memory_facts():
+        """Read-only view of memory facts."""
+        facts = load_memory_facts()
+        return JSONResponse({"memory_facts": facts})
+
+    @router.post("/memory-facts/clear")
+    async def memory_facts_clear():
+        """Clear memory facts and refresh default context snapshot."""
+        facts = clear_memory_facts()
+        try:
+            default_context_cache.memory_facts = facts
+            default_context_cache.system_prompt = await default_context_cache.construct_system_prompt(
+                default_context_cache.character_config.persona_prompt
+            )
+        except Exception as e:
+            logger.error(f"Failed to refresh system prompt after clearing facts: {e}")
+        return JSONResponse({"memory_facts": facts, "status": "cleared"})
+
+    @router.get("/memory-facts/export")
+    async def memory_facts_export():
+        """Export memory facts as downloadable JSON."""
+        facts = load_memory_facts()
+        filename = get_memory_facts_filename()
+        return JSONResponse(
+            facts,
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    @router.get("/persona-override")
+    async def get_persona_override():
+        """Return current override content (read-only)."""
+        persona_id = default_context_cache.persona_info.get("id") or "cohost_vtuber"
+        override_data = load_override(persona_id, base_dir=DEFAULT_OVERRIDE_DIR)
+        return JSONResponse({"persona_id": persona_id, "override": override_data})
+
+    @router.post("/persona-override")
+    async def save_persona_override(payload: dict):
+        """Save override with validation of allowed fields."""
+        persona_id = default_context_cache.persona_info.get("id") or "cohost_vtuber"
+        allowed_keys = {"name", "description", "preferred_language", "verbosity"}
+        override = {}
+        for key, value in (payload or {}).items():
+            if key in allowed_keys:
+                if isinstance(value, str):
+                    value = value.strip()
+                override[key] = value
+        save_override(persona_id, override, base_dir=DEFAULT_OVERRIDE_DIR)
+        # Refresh default context persona prompt/system prompt
+        await default_context_cache.load_from_config(default_context_cache.config)
+        return JSONResponse({"status": "saved", "override": override})
+
+    @router.post("/persona-override/revert")
+    async def revert_persona_override():
+        """Delete override file and refresh context."""
+        persona_id = default_context_cache.persona_info.get("id") or "cohost_vtuber"
+        delete_override(persona_id, base_dir=DEFAULT_OVERRIDE_DIR)
+        await default_context_cache.load_from_config(default_context_cache.config)
+        return JSONResponse({"status": "reverted"})
 
     @router.get("/live2d-models/info")
     async def get_live2d_folder_info():

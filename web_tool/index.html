@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ASR & TTS Tool</title>
+    <title>Persona & Tools</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -76,6 +76,25 @@
             font-size: 14px;
         }
 
+        .meta-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin: 12px 0;
+        }
+
+        .meta-grid div {
+            font-size: 14px;
+            color: #444;
+            word-break: break-word;
+        }
+
+        .label {
+            font-weight: bold;
+            display: inline-block;
+            min-width: 110px;
+        }
+
         .error {
             background-color: #ffe6e6;
             border: 1px solid #ffcccc;
@@ -107,7 +126,53 @@
 </head>
 
 <body>
-    <h1>ASR & TTS Tool</h1>
+    <h1>Persona & Tools</h1>
+
+    <div class="section">
+        <h2>Persona</h2>
+        <div id="personaStatus" class="status"></div>
+        <div class="meta-grid">
+            <div><span class="label">ID:</span> <span id="personaId">--</span></div>
+            <div><span class="label">Nome:</span> <span id="personaName">--</span></div>
+            <div><span class="label">Origem:</span> <span id="personaSource">--</span></div>
+        </div>
+        <textarea id="personaPrompt" placeholder="System prompt carregado aqui" readonly></textarea>
+    </div>
+
+    <div class="section">
+        <h2>Persona Override</h2>
+        <div class="controls">
+            <label class="label" style="min-width: 80px;">Nome</label>
+            <input id="overrideName" class="file-input" placeholder="Novo nome" />
+        </div>
+        <div class="controls">
+            <label class="label" style="min-width: 80px;">Descrição</label>
+            <input id="overrideDescription" class="file-input" placeholder="Descrição curta" />
+        </div>
+        <div class="controls">
+            <label class="label" style="min-width: 80px;">Idioma</label>
+            <input id="overrideLanguage" class="file-input" placeholder="pt-BR / en-US / ja-JP" />
+        </div>
+        <div class="controls">
+            <label class="label" style="min-width: 80px;">Verbosity</label>
+            <input id="overrideVerbosity" class="file-input" placeholder="low/medium/high" />
+        </div>
+        <div class="controls">
+            <button id="saveOverride" class="button">Salvar</button>
+            <button id="revertOverride" class="button">Reverter override</button>
+        </div>
+        <div id="overrideStatus" class="status"></div>
+    </div>
+
+    <div class="section">
+        <h2>Memory</h2>
+        <div class="controls">
+            <button id="clearMemory" class="button">Limpar memória</button>
+            <button id="exportMemory" class="button">Exportar memória</button>
+        </div>
+        <div id="memoryStatus" class="status"></div>
+        <textarea id="memoryFacts" placeholder="memory_facts.json" readonly></textarea>
+    </div>
 
     <div class="section">
         <h2>Speech Recognition</h2>

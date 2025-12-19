@@ -17,6 +17,7 @@ from .types import WebSocketSend
 from .tts_manager import TTSTaskManager
 from ..chat_history_manager import store_message
 from ..service_context import ServiceContext
+from ..chat_history_manager import add_custom_fact, load_memory_facts
 
 # Import necessary types from agent outputs
 from ..agent.output_types import SentenceOutput, AudioOutput
@@ -59,6 +60,20 @@ async def process_single_conversation(
             user_input, context.asr_engine, websocket_send
         )
 
+        # Detect "remember this" commands
+        remember_prefixes = ["lembra disso:", "remember this:", "覚えて:"]
+        trimmed = input_text.strip()
+        lowered = trimmed.lower()
+        stored_fact = False
+        for prefix in remember_prefixes:
+            if lowered.startswith(prefix):
+                fact_text = trimmed[len(prefix) :].strip()
+                if fact_text:
+                    updated_facts = add_custom_fact(fact_text)
+                    context.memory_facts = updated_facts
+                    stored_fact = True
+                break
+
         # Create batch input
         batch_input = create_batch_input(
             input_text=input_text,
@@ -84,6 +99,21 @@ async def process_single_conversation(
         logger.info(f"User input: {input_text}")
         if images:
             logger.info(f"With {len(images)} images")
+
+        if stored_fact:
+            await websocket_send(
+                json.dumps(
+                    {
+                        "type": "full-text",
+                        "text": "[Memória] fato registrado.",
+                    }
+                )
+            )
+            # Refresh system prompt with new facts for subsequent turns
+            context.memory_facts = load_memory_facts()
+            context.system_prompt = await context.construct_system_prompt(
+                context.character_config.persona_prompt
+            )
 
         try:
             # agent.chat yields Union[SentenceOutput, Dict[str, Any]]

@@ -36,7 +36,12 @@ from .config_manager import (
     read_yaml,
     validate_config,
 )
-from .utils.persona_loader import load_persona_prompt_by_id
+from .utils.persona_loader import (
+    load_persona_prompt_by_id,
+    load_persona_prompt_and_meta_by_id,
+)
+from .utils.persona_override import load_override, delete_override, DEFAULT_OVERRIDE_DIR
+from .chat_history_manager import load_memory_facts
 
 
 class ServiceContext:
@@ -64,6 +69,8 @@ class ServiceContext:
 
         # the system prompt is a combination of the persona prompt and live2d expression prompt
         self.system_prompt: str = None
+        self.persona_info: dict = {}
+        self.memory_facts: dict = {}
 
         # Store the generated MCP prompt string (if MCP enabled)
         self.mcp_prompt: str = ""
@@ -214,6 +221,7 @@ class ServiceContext:
         tool_adapter: ToolAdapter | None = None,
         send_text: Callable = None,
         client_uid: str = None,
+        persona_info: dict | None = None,
     ) -> None:
         """
         Load the ServiceContext with the reference of the provided instances.
@@ -238,6 +246,7 @@ class ServiceContext:
         self.tool_adapter = tool_adapter
         self.send_text = send_text
         self.client_uid = client_uid
+        self.persona_info = persona_info or {}
 
         # Initialize session-specific MCP components
         await self._init_mcp_components(
@@ -297,12 +306,33 @@ class ServiceContext:
             config.character_config.agent_config.agent_settings.basic_memory_agent.mcp_enabled_servers,
         )
 
-        persona_override = config.system_config.active_persona_id
+        env_persona_override = (os.getenv("ACTIVE_PERSONA_ID") or "").strip()
+        persona_override = env_persona_override or config.system_config.active_persona_id
         persona_prompt = config.character_config.persona_prompt
+        persona_meta = {
+            "id": persona_override,
+            "name": config.character_config.character_name,
+            "role": None,
+            "source": "conf.yaml:character_config.persona_prompt",
+            "override_path": None,
+        }
+
+        persona_override_data = {}
+        if persona_override:
+            persona_override_data = load_override(
+                persona_override, base_dir=DEFAULT_OVERRIDE_DIR
+            )
+            if persona_override_data:
+                persona_meta["override_path"] = os.fspath(
+                    DEFAULT_OVERRIDE_DIR / f"{persona_override}.override.yaml"
+                )
 
         if persona_override:
             try:
-                persona_prompt = load_persona_prompt_by_id(persona_override)
+                persona_prompt, loaded_meta = load_persona_prompt_and_meta_by_id(
+                    persona_override, override=persona_override_data
+                )
+                persona_meta.update(loaded_meta)
                 logger.info(
                     f"Loaded persona prompt from ID '{persona_override}' in persona directory"
                 )
@@ -310,6 +340,9 @@ class ServiceContext:
                 logger.warning(
                     f"Failed to load persona '{persona_override}', using configured persona prompt instead. Error: {e}"
                 )
+
+        self.persona_info = persona_meta
+        self.memory_facts = load_memory_facts()
 
         # init agent from character config
         await self.init_agent(
@@ -392,6 +425,8 @@ class ServiceContext:
             return
 
         system_prompt = await self.construct_system_prompt(persona_prompt)
+        self.persona_info = self.persona_info or {}
+        self.persona_info["system_prompt"] = system_prompt
 
         # Pass avatar to agent factory
         avatar = self.character_config.avatar or ""  # Get avatar from config
@@ -481,6 +516,10 @@ class ServiceContext:
                 continue
 
             persona_prompt += prompt_content
+
+        if self.memory_facts:
+            memory_block = json.dumps(self.memory_facts, ensure_ascii=False, indent=2)
+            persona_prompt += f"\n\n[MEMORY FACTS]\n{memory_block}\n"
 
         logger.debug("\n === System Prompt ===")
         logger.debug(persona_prompt)

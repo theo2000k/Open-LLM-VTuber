@@ -8,9 +8,6 @@ import re
 import chardet
 from loguru import logger
 
-from .main import Config
-
-
 def _serialize_persona_to_prompt(persona_data: Any) -> str:
     """Serialize a persona definition (dict/str) into a prompt string."""
 
@@ -86,7 +83,7 @@ def read_yaml(config_path: str) -> Dict[str, Any]:
         raise e
 
 
-def validate_config(config_data: dict) -> Config:
+def validate_config(config_data: dict):
     """
     Validate configuration data against the Config model.
 
@@ -99,6 +96,8 @@ def validate_config(config_data: dict) -> Config:
     Raises:
         ValidationError: If the configuration fails validation.
     """
+    from .main import Config
+
     try:
         return Config(**config_data)
     except ValidationError as e:

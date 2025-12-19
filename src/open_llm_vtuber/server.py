@@ -16,7 +16,7 @@ from starlette.staticfiles import StaticFiles as StarletteStaticFiles
 
 from .routes import init_client_ws_route, init_webtool_routes, init_proxy_route
 from .service_context import ServiceContext
-from .config_manager.utils import Config
+from .config_manager.main import Config
 
 
 # Create a custom StaticFiles class that adds CORS headers

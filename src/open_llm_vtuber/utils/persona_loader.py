@@ -5,6 +5,7 @@ from typing import Any, Iterable
 from loguru import logger
 
 from ..config_manager.utils import read_yaml
+from .persona_override import apply_override
 
 
 DEFAULT_PERSONA_DIR = Path(__file__).resolve().parents[3] / "persona"
@@ -18,10 +19,13 @@ def _format_section(title: str, body: str) -> str:
     return f"{title}:\n{body.strip()}" if body else ""
 
 
-def _format_rules(title: str, rules: Iterable[str] | None) -> str:
+def _format_rules(title: str, rules: Iterable[Any] | None) -> str:
     if not rules:
         return ""
-    joined = "\n- " + "\n- ".join(rules)
+    stringified = [str(rule) for rule in rules if rule is not None]
+    if not stringified:
+        return ""
+    joined = "\n- " + "\n- ".join(stringified)
     return f"{title}:{joined}"
 
 
@@ -32,6 +36,17 @@ def _format_key_values(title: str, values: dict[str, Any]) -> str:
     if not pairs:
         return ""
     return f"{title}:\n- " + "\n- ".join(pairs)
+
+
+def _format_flexible_section(title: str, value: Any) -> str:
+    """Format a section that may be a mapping, list, or scalar."""
+    if value is None:
+        return ""
+    if isinstance(value, dict):
+        return _format_key_values(title, value)
+    if isinstance(value, (list, tuple, set)):
+        return _format_rules(title, value)
+    return _format_section(title, str(value))
 
 
 def build_persona_prompt(persona_data: dict[str, Any]) -> str:
@@ -83,11 +98,13 @@ def build_persona_prompt(persona_data: dict[str, Any]) -> str:
     if language_rules:
         lines.append(_format_rules("Language rules", language_rules))
 
-    if short_term:
-        lines.append(_format_key_values("Short-term memory", short_term))
+    short_term_section = _format_flexible_section("Short-term memory", short_term)
+    if short_term_section:
+        lines.append(short_term_section)
 
-    if long_term:
-        lines.append(_format_key_values("Long-term memory", long_term))
+    long_term_section = _format_flexible_section("Long-term memory", long_term)
+    if long_term_section:
+        lines.append(long_term_section)
 
     if memory_rules:
         lines.append(_format_rules("Memory rules", memory_rules))
@@ -101,6 +118,15 @@ def build_persona_prompt(persona_data: dict[str, Any]) -> str:
 def load_persona_prompt_by_id(persona_id: str, persona_dir: str | Path | None = None) -> str:
     """Load a persona YAML by ID and render it as a system prompt."""
 
+    prompt, _ = load_persona_prompt_and_meta_by_id(persona_id, persona_dir)
+    return prompt
+
+
+def load_persona_prompt_and_meta_by_id(
+    persona_id: str, persona_dir: str | Path | None = None, override: dict | None = None
+) -> tuple[str, dict[str, Any]]:
+    """Load persona prompt plus metadata (id/name/source) by ID, applying override if given."""
+
     base_dir = Path(persona_dir) if persona_dir else DEFAULT_PERSONA_DIR
     persona_path = base_dir / f"{persona_id}.yaml"
 
@@ -113,7 +139,20 @@ def load_persona_prompt_by_id(persona_id: str, persona_dir: str | Path | None = 
     if not isinstance(persona_data, dict):
         raise ValueError(f"Persona '{persona_id}' must be a YAML mapping")
 
+    applied_fields = {}
+    if override:
+        persona_data, applied_fields = apply_override(persona_data, override)
+
     prompt = build_persona_prompt(persona_data)
+    persona_section = persona_data.get("persona", {})
+    meta = {
+        "id": persona_section.get("id") or persona_id,
+        "name": persona_section.get("name"),
+        "role": persona_section.get("role"),
+        "source": os.fspath(persona_path),
+        "override_applied": applied_fields,
+    }
+
     logger.debug(f"Loaded persona '{persona_id}' from {persona_path}")
-    return prompt
+    return prompt, meta
 
